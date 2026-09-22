@@ -17,3 +17,4 @@ results/tables/*
 *.so
 *.dylib
 *.dll
+stan/*.rds
