@@ -13,14 +13,12 @@ parameters {
 model {
   alpha ~ exponential(1);
   beta ~ exponential(1);
-
   theta ~ beta(alpha, beta);
   y ~ binomial(n, theta);
 }
 
 generated quantities {
   array[J] int y_rep;
-
   for (j in 1:J) {
     y_rep[j] = binomial_rng(n[j], theta[j]);
   }

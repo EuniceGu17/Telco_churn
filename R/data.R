@@ -1,80 +1,45 @@
-# Validate the raw fields needed.
-validate_telco <- function(data) {
-  required <- c("customerID", "Churn", "Contract")
-  missing <- setdiff(required, names(data))
-
-  if (length(missing) > 0L) {
-    stop("Missing columns: ", paste(missing, collapse = ", "))
-  }
-
-  if (nrow(data) == 0L) {
-    stop("Input data contain no rows.")
-  }
-
-  ids <- data$customerID
-
-  if (anyNA(ids) || any(trimws(ids) == "")) {
-    stop("customerID contains missing or empty values.")
-  }
-
-  if (anyDuplicated(ids) > 0L) {
-    stop("customerID must be unique.")
-  }
-
-  if (anyNA(data$Churn) ||
-      !all(data$Churn %in% c("Yes", "No"))) {
-    stop("Churn must contain only Yes and No.")
-  }
-
-  allowed <- c("Month-to-month", "One year", "Two year")
-
-  if (anyNA(data$Contract) ||
-      !all(data$Contract %in% allowed)) {
-    stop("Contract contains missing or unsupported values.")
-  }
-
-  if (!all(allowed %in% data$Contract)) {
-    stop("All three contract groups must be present.")
-  }
-
-  invisible(TRUE)
-}
-
-
-# Read raw data and encode only the variables used.
+# Read the columns used in the churn analysis.
 read_telco <- function(path) {
-  if (!file.exists(path)) {
-    stop("Data file not found: ", path)
+  if (!file.exists(path)) stop("Cannot find data: ", path)
+
+  telco_raw <- readr::read_csv(
+    path, show_col_types = FALSE,
+    col_types = readr::cols(.default = readr::col_character())
+  )
+
+  required <- c("customerID", "Churn", "Contract")
+  if (!all(required %in% names(telco_raw))) {
+    stop("Data must contain customerID, Churn and Contract.")
+  }
+  if (nrow(telco_raw) == 0) stop("The data file is empty.")
+  if (anyNA(telco_raw$customerID) ||
+      any(trimws(telco_raw$customerID) == "") ||
+      anyDuplicated(telco_raw$customerID) > 0) {
+    stop("Customer IDs must be present and unique.")
+  }
+  if (!all(telco_raw$Churn %in% c("Yes", "No"))) {
+    stop("Churn must be Yes or No.")
   }
 
-  data <- readr::read_csv(
-    path,
-    col_types = readr::cols(.default = readr::col_character()),
-    show_col_types = FALSE
-  )
+  contracts <- c("Month-to-month", "One year", "Two year")
+  if (!all(telco_raw$Contract %in% contracts) ||
+      !all(contracts %in% telco_raw$Contract)) {
+    stop("Check the three contract categories.")
+  }
 
-  validate_telco(data)
-
-  data <- data[, c("customerID", "Contract", "Churn")]
-
-  data$Churn <- as.integer(data$Churn == "Yes")
-  data$Contract <- factor(
-    data$Contract,
-    levels = c("Month-to-month", "One year", "Two year")
-  )
-
-  data
+  # TotalCharges is not used, so its missing values do not remove customers.
+  telco <- telco_raw %>%
+    select(customerID, Contract, Churn) %>%
+    mutate(
+      Churn = if_else(Churn == "Yes", 1L, 0L),
+      Contract = factor(Contract, levels = contracts)
+    )
+  telco
 }
 
-
-# Summarize group sizes and churn counts in a fixed order.
-summarize_contracts <- function(data) {
-  data |>
-    dplyr::group_by(Contract) |>
-    dplyr::summarise(
-      n = dplyr::n(),
-      y = sum(Churn),
-      .groups = "drop"
-    ) |>
-    dplyr::arrange(Contract)
+summarize_contracts <- function(telco) {
+  telco %>%
+    group_by(Contract) %>%
+    summarise(n = n(), y = sum(Churn), .groups = "drop") %>%
+    arrange(Contract)
 }

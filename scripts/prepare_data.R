@@ -1,18 +1,12 @@
+library(dplyr)
 source("R/data.R")
 
-message("[prepare] Reading and validating raw data...")
-
+message("Reading and checking Telco data...")
 telco <- read_telco("data/raw/Telco-Customer-Churn.csv")
-groups <- summarize_contracts(telco)
+group_data <- summarize_contracts(telco)
 
 dir.create("data/processed", recursive = TRUE, showWarnings = FALSE)
-
 saveRDS(telco, "data/processed/telco.rds")
 
-message(
-  "[prepare] Customers: ", nrow(telco),
-  "; churns: ", sum(telco$Churn)
-)
-
-print(groups)
-message("[prepare] Saved data/processed/telco.rds")
+cat("Sample size:", nrow(telco), "\nNumber of churns:", sum(telco$Churn), "\n")
+print(group_data)

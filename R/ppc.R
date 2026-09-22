@@ -1,89 +1,49 @@
-# Calculate a capped two-sided posterior predictive tail probability.
-ppc_two_sided <- function(y_rep, observed) {
-  if (!is.numeric(y_rep) || length(y_rep) == 0L ||
-      any(!is.finite(y_rep)) ||
-      !is.numeric(observed) || length(observed) != 1L ||
-      !is.finite(observed)) {
-    stop("PPC inputs must be finite numeric values.")
-  }
-
-  min(
-    1,
-    2 * min(
-      mean(y_rep <= observed),
-      mean(y_rep >= observed)
-    )
-  )
+# Both tails include ties, so cap the two-sided value at one.
+ppc_value <- function(y_rep, observed) {
+  stopifnot(length(y_rep) > 0, all(is.finite(y_rep)),
+            length(observed) == 1, is.finite(observed))
+  min(1, 2 * min(mean(y_rep <= observed), mean(y_rep >= observed)))
 }
 
-
-# Summarize group-level posterior draws in the stored group order.
-contract_summary <- function(models) {
-  theta <- models$hierarchical$theta
-  groups <- models$groups
-
-  if (ncol(theta) != nrow(groups)) {
-    stop("Posterior columns do not match contract groups.")
-  }
-
-  data.frame(
-    Contract = as.character(groups$Contract),
-    mean = colMeans(theta),
-    lower = apply(
-      theta, 2, stats::quantile,
-      probs = 0.025, names = FALSE
-    ),
-    upper = apply(
-      theta, 2, stats::quantile,
-      probs = 0.975, names = FALSE
-    )
-  )
-}
-
-
-# Build all final numerical tables from the saved model results.
-make_tables <- function(models) {
-  groups <- models$groups
+summarize_results <- function(models) {
+  group_data <- models$group_data
   overall <- models$overall
-  hierarchical <- models$hierarchical
+  theta_draws <- models$hierarchical$theta_draws
+  yrep_mat <- models$hierarchical$yrep_mat
 
-  contract <- contract_summary(models)
-
-  group_ppc <- vapply(
-    seq_len(nrow(groups)),
-    function(j) {
-      ppc_two_sided(
-        hierarchical$y_rep[, j],
-        groups$y[j]
-      )
-    },
-    numeric(1)
+  theta_summary <- data.frame(
+    Contract = as.character(group_data$Contract),
+    mean = colMeans(theta_draws),
+    lower = apply(theta_draws, 2, quantile, probs = 0.025),
+    upper = apply(theta_draws, 2, quantile, probs = 0.975)
   )
+  rownames(theta_summary) <- NULL
 
-  ppc <- data.frame(
-    scope = c("Overall", as.character(groups$Contract)),
+  group_ppc <- numeric(nrow(group_data))
+  for (j in seq_len(nrow(group_data))) {
+    group_ppc[j] <- ppc_value(yrep_mat[, j], group_data$y[j])
+  }
+
+  ppc_summary <- data.frame(
+    group = c("Overall", as.character(group_data$Contract)),
     p_two_sided = c(
-      ppc_two_sided(
-        overall$y_rep,
-        overall$summary$y
-      ),
-      group_ppc
+      ppc_value(overall$y_rep_total, overall$summary$y), group_ppc
     )
   )
 
-  comparison <- data.frame(
-    Contract = as.character(groups$Contract),
-    observed = groups$y,
-    hierarchical = groups$n * contract$mean,
-    one_parameter = groups$n * overall$summary$mean
-  )
+  comparison <- group_data %>%
+    mutate(Contract = as.character(Contract)) %>%
+    left_join(theta_summary, by = "Contract") %>%
+    mutate(expected_y_oneparam = n * overall$summary$mean,
+           expected_y_hier = n * mean) %>%
+    select(Contract, n, y, expected_y_oneparam, expected_y_hier)
 
-  list(
-    overall_posterior = overall$summary,
-    contract_posterior = contract,
-    ppc_summary = ppc,
-    model_comparison = comparison,
-    mcmc_diagnostics = hierarchical$diagnostics,
-    parameter_summary = hierarchical$parameter_summary
-  )
+  diagnostics <- models$hierarchical$parameter_summary
+  diagnostics$divergences_all_chains <- models$hierarchical$divergences
+
+  list(overall_posterior = overall$summary,
+       contract_posterior = theta_summary,
+       ppc_summary = ppc_summary,
+       model_comparison = comparison,
+       mcmc_diagnostics = diagnostics)
 }

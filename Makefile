@@ -1,50 +1,28 @@
-.DEFAULT_GOAL := all
+.DEFAULT_GOAL := reproduce
 .DELETE_ON_ERROR:
 
 RSCRIPT := Rscript
-
-RAW := data/raw/Telco-Customer-Churn.csv
-PROCESSED := data/processed/telco.rds
-MODELS := artifacts/models.rds
-
-FIGURE_NAMES := churn_bar contract_rate mc_posterior ppc_total \
-                theta_density theta_interval ppc_contract comparison_models
-
-TABLE_NAMES := overall_posterior contract_posterior ppc_summary \
-               model_comparison mcmc_diagnostics parameter_summary
-
-FIGURES := $(addprefix results/figures/,$(addsuffix .png,$(FIGURE_NAMES)))
+ENV := $(wildcard renv.lock)
+FIG_NAMES := churn_bar contract_rate mc_posterior ppc_total theta_density theta_interval ppc_contract comparison_models
+TABLE_NAMES := overall_posterior contract_posterior ppc_summary model_comparison mcmc_diagnostics
+FIGURES := $(addprefix results/figures/,$(addsuffix .png,$(FIG_NAMES)))
 TABLES := $(addprefix results/tables/,$(addsuffix .csv,$(TABLE_NAMES)))
 
-OUTPUTS := $(FIGURES) $(TABLES)
-
-.PHONY: all reproduce setup test clean
-
+.PHONY: all reproduce test
 all: reproduce
+reproduce: $(FIGURES) $(TABLES)
 
-reproduce: $(OUTPUTS)
-
-setup:
-	$(RSCRIPT) -e 'renv::restore(prompt = FALSE)'
-
-$(PROCESSED): $(RAW) R/data.R scripts/prepare_data.R renv.lock
+data/processed/telco.rds: data/raw/Telco-Customer-Churn.csv R/data.R scripts/prepare_data.R $(ENV)
 	$(RSCRIPT) scripts/prepare_data.R
 
-$(MODELS): $(PROCESSED) R/data.R R/models.R \
-           stan/hierarchical_model.stan scripts/fit_models.R renv.lock
+artifacts/models.rds: data/processed/telco.rds R/data.R R/models.R scripts/fit_models.R stan/hierarchical_model.stan $(ENV)
 	$(RSCRIPT) scripts/fit_models.R
 
-$(FIGURES): results/figures/%.png: $(MODELS) R/plots.R R/ppc.R \
-            scripts/generate_results.R renv.lock
+$(FIGURES): results/figures/%.png: artifacts/models.rds R/plots.R R/ppc.R scripts/generate_results.R $(ENV)
 	$(RSCRIPT) scripts/generate_results.R "$@"
 
-$(TABLES): results/tables/%.csv: $(MODELS) R/ppc.R \
-          scripts/generate_results.R renv.lock
+$(TABLES): results/tables/%.csv: artifacts/models.rds R/ppc.R R/plots.R scripts/generate_results.R $(ENV)
 	$(RSCRIPT) scripts/generate_results.R "$@"
 
 test:
 	$(RSCRIPT) scripts/run_tests.R
-
-clean:
-	$(RM) $(PROCESSED) $(MODELS) $(OUTPUTS) artifacts/sessionInfo.txt
-	
