@@ -1,29 +1,26 @@
 data {
   int<lower=1> J;
-  int<lower=0> n[J];
-  int<lower=0> y[J];
+  array[J] int<lower=0> n;
+  array[J] int<lower=0> y;
 }
 
 parameters {
   real<lower=0> alpha;
   real<lower=0> beta;
-  vector<lower=0,upper=1>[J] theta;  // group-level churn probabilities
+  vector<lower=0, upper=1>[J] theta;
 }
 
 model {
-  // Hyperpriors
   alpha ~ exponential(1);
-  beta  ~ exponential(1);
-  
-  // Group-level priors
-  theta ~ beta(alpha, beta);
+  beta ~ exponential(1);
 
-  // Likelihood for each group
+  theta ~ beta(alpha, beta);
   y ~ binomial(n, theta);
 }
 
 generated quantities {
-  int y_rep[J];
+  array[J] int y_rep;
+
   for (j in 1:J) {
     y_rep[j] = binomial_rng(n[j], theta[j]);
   }
